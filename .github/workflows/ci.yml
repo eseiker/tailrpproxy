@@ -25,6 +25,8 @@ jobs:
         run: go test -race ./...
       - name: Vet
         run: go vet ./...
+      - name: Verify stable Tailscale pin
+        run: ./hack/version.sh
 
   linux-binaries:
     runs-on: ubuntu-latest
@@ -46,9 +48,18 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.arch }}
         run: |
-          mkdir -p dist
-          go build -trimpath -ldflags="-s -w" \
-            -o "dist/tailrpproxy-linux-${GOARCH}" ./cmd/tailrpproxy
+          rpp_version=$(cat VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            rpp_version=${GITHUB_REF_NAME#v}
+          fi
+          RPPROXY_VERSION="$rpp_version" \
+            OUTPUT="dist/tailrpproxy-linux-${GOARCH}" RPPROXY_STRIP=1 \
+            ./hack/build.sh
+          if [[ "$GOARCH" == "amd64" ]]; then
+            expected="tailrpproxy $(RPPROXY_VERSION="$rpp_version" ./hack/version.sh)"
+            actual=$("dist/tailrpproxy-linux-${GOARCH}" -version)
+            test "$actual" = "$expected"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: tailrpproxy-linux-${{ matrix.arch }}
@@ -81,6 +92,14 @@ jobs:
             type=ref,event=tag
             type=sha
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Resolve tailrpproxy version
+        id: build-version
+        run: |
+          rpp_version=$(cat VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            rpp_version=${GITHUB_REF_NAME#v}
+          fi
+          echo "rpp=$rpp_version" >> "$GITHUB_OUTPUT"
       - name: Build and publish
         uses: docker/build-push-action@v6
         with:
@@ -89,6 +108,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            RPPROXY_VERSION=${{ steps.build-version.outputs.rpp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

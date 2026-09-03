@@ -195,8 +195,24 @@ the `tailscale.com` module version aligned with the deployed Operator.
 ```sh
 make test
 make vet
+make version
+make build
 make build-linux
 ```
+
+`VERSION` contains the tailrpproxy release version. All supported build paths
+stamp Tailscale's `longStamp` and `shortStamp`, so `tailrpproxy -version` and
+the Tailscale admin console report a version such as
+`1.102.3-rpp-0.0.2` instead of `ERR-BuildInfo`.
+
+Dependabot tracks only the direct `tailscale.com` module and opens a weekly
+update pull request. Because the checked-in version is stable, Dependabot keeps
+following stable releases; CI rejects prerelease and pseudo-version pins. Each
+pull request runs race tests, vet, Linux amd64/arm64 builds, and the
+multi-platform container build. `hack/update-tailscale.sh` performs the same
+stable-only update locally when an immediate refresh is needed. The script also
+aligns the directly imported `wireguard-go` revision with the version required
+by the selected stable Tailscale module.
 
 GitHub Actions uploads Linux amd64 and arm64 binaries as workflow artifacts.
 Pushing a `v*` tag also publishes both binaries and `SHA256SUMS` in a GitHub

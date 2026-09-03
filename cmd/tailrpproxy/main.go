@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/eseiker/tailrpproxy/internal/rpproxy"
+	tsversion "tailscale.com/version"
 )
 
 type options struct {
@@ -34,6 +35,7 @@ type options struct {
 	nativeTUNName         string
 	nativeTUNMTU          int
 	tailscaledSocket      string
+	printVersion          bool
 }
 
 func main() {
@@ -44,6 +46,10 @@ func main() {
 
 func run() error {
 	configuration := parseFlags()
+	if configuration.printVersion {
+		fmt.Printf("tailrpproxy %s\n", tsversion.Long())
+		return nil
+	}
 	selectedTransport, selectionReason, err := resolveTransport(
 		configuration.transport,
 		configuration.tsnetStateDir,
@@ -89,6 +95,7 @@ func parseFlags() options {
 	flag.StringVar(&configuration.nativeTUNName, "native-tun-name", envOrDefault("RPPROXY_NATIVE_TUN_NAME", "tailrpproxy"), "Linux TUN interface name for native mode")
 	flag.IntVar(&configuration.nativeTUNMTU, "native-tun-mtu", 1500, "Linux TUN interface MTU for native mode")
 	flag.StringVar(&configuration.tailscaledSocket, "tailscaled-socket", strings.TrimSpace(os.Getenv("RPPROXY_TAILSCALED_SOCKET")), "host tailscaled LocalAPI socket path")
+	flag.BoolVar(&configuration.printVersion, "version", false, "print version information and exit")
 	flag.Parse()
 	return configuration
 }

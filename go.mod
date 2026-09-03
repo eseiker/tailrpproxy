@@ -4,9 +4,9 @@ go 1.27.0
 
 require (
 	github.com/jsimonetti/rtnetlink v1.4.1
-	github.com/tailscale/wireguard-go v0.0.0-20260821191448-23d18d66172c
+	github.com/tailscale/wireguard-go v0.0.0-20260715223240-2e01ba5b00f0
 	golang.org/x/sys v0.47.0
-	tailscale.com v1.103.0-pre.0.20260830144538-72780705eda8
+	tailscale.com v1.102.3
 )
 
 require (

@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:17"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 1
+    allow:
+      - dependency-name: tailscale.com
+        dependency-type: direct
+    versioning-strategy: increase
+    commit-message:
+      prefix: deps

@@ -19,7 +19,7 @@ func TestLoadOperatorConfigSelectsHighestCompatibleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := config.hostname(); got != "current" {
+	if got := optionalString(config.Parsed.Hostname); got != "current" {
 		t.Fatalf("hostname = %q, want current", got)
 	}
 }
@@ -48,7 +48,7 @@ func TestOperatorConfigReadsRelativeAuthKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authKey, err := config.authKey()
+	authKey, err := operatorAuthKey(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,18 +57,13 @@ func TestOperatorConfigReadsRelativeAuthKeyFile(t *testing.T) {
 	}
 }
 
-func TestOperatorTSNetServerDoesNotOverrideIssuedAuthKeyTags(t *testing.T) {
+func TestBaseTSNetServerDoesNotApplyStandaloneTags(t *testing.T) {
 	directory := t.TempDir()
-	writeOperatorConfig(t, directory, int(tailcfg.CurrentCapabilityVersion), "operator-node")
-	config, err := loadOperatorConfig(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	server := newOperatorTSNetServer(options{
+	server := newTSNetServer(options{
 		tsnetStateDir: directory,
+		tsnetHostname: "operator-node",
 		tsnetTags:     "tag:standalone-must-not-override-operator",
-	}, config, nil, "tskey-operator-issued")
+	}, "tskey-operator-issued")
 	if len(server.AdvertiseTags) != 0 {
 		t.Fatalf("AdvertiseTags = %#v, want none so the Operator-issued auth key controls tags", server.AdvertiseTags)
 	}

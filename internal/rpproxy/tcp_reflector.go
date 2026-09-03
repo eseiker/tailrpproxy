@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -16,13 +15,13 @@ import (
 // destination port and then proxies the stream in both directions.
 type TCPReflector struct {
 	dial           DialContextFunc
-	route          netip.Prefix
+	target         netip.Addr
 	requireTailnet bool
 	config         Config
 	logf           func(string, ...any)
 	metrics        Metrics
 
-	closing       atomic.Bool
+	closing       bool
 	workerCtx     context.Context
 	cancelWorkers context.CancelFunc
 	workers       sync.WaitGroup
@@ -52,7 +51,7 @@ func NewTCPReflector(
 	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	return &TCPReflector{
 		dial:           dial,
-		route:          route.Masked(),
+		target:         route.Masked().Addr(),
 		requireTailnet: requireTailnet,
 		config:         config.withDefaults(),
 		logf:           logf,
@@ -69,10 +68,10 @@ func (reflector *TCPReflector) Metrics() *Metrics {
 
 // HandleTCPFlow selects flows addressed to the synthetic route for reflection.
 func (reflector *TCPReflector) HandleTCPFlow(src, dst netip.AddrPort) (func(net.Conn), bool) {
-	if dst.Addr() != reflector.route.Addr() {
+	if dst.Addr() != reflector.target {
 		return nil, false
 	}
-	if reflector.requireTailnet && !IsTailnetAddress(src.Addr().String()) {
+	if reflector.requireTailnet && !IsTailnetAddress(src.Addr()) {
 		reflector.metrics.rejected.Add(1)
 		reflector.logf("rejected non-tailnet source %s for %s", src, dst)
 		return nil, true
@@ -136,7 +135,7 @@ func (reflector *TCPReflector) handle(client net.Conn, src, dst netip.AddrPort) 
 
 func (reflector *TCPReflector) Shutdown(ctx context.Context) error {
 	reflector.mu.Lock()
-	reflector.closing.Store(true)
+	reflector.closing = true
 	reflector.mu.Unlock()
 	reflector.metrics.SetReady(false)
 
@@ -159,7 +158,7 @@ func (reflector *TCPReflector) Shutdown(ctx context.Context) error {
 func (reflector *TCPReflector) acquire(peer string, connection net.Conn) bool {
 	reflector.mu.Lock()
 	defer reflector.mu.Unlock()
-	if reflector.closing.Load() || reflector.totalActive >= reflector.config.MaxConnections {
+	if reflector.closing || reflector.totalActive >= reflector.config.MaxConnections {
 		return false
 	}
 	if reflector.peerCounts[peer] >= reflector.config.MaxConnectionsPerPeer {

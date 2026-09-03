@@ -2,24 +2,16 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"tailscale.com/ipn"
 	"tailscale.com/ipn/conffile"
 	"tailscale.com/tailcfg"
-	"tailscale.com/tsnet"
 )
 
-type operatorConfig struct {
-	Path   string
-	Config *conffile.Config
-}
-
-func loadOperatorConfig(directory string) (*operatorConfig, error) {
+func loadOperatorConfig(directory string) (*conffile.Config, error) {
 	directory = strings.TrimSpace(directory)
 	if directory == "" {
 		return nil, fmt.Errorf("TS_EXPERIMENTAL_VERSIONED_CONFIG_DIR is required in operator mode")
@@ -47,7 +39,7 @@ func loadOperatorConfig(directory string) (*operatorConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load Operator config %q: %w", bestPath, err)
 	}
-	return &operatorConfig{Path: bestPath, Config: config}, nil
+	return config, nil
 }
 
 func capabilityVersionFromName(name string) (int, bool) {
@@ -59,11 +51,11 @@ func capabilityVersionFromName(name string) (int, bool) {
 	return version, err == nil && version >= 0
 }
 
-func (config *operatorConfig) authKey() (string, error) {
-	if config.Config.Parsed.AuthKey == nil {
+func operatorAuthKey(config *conffile.Config) (string, error) {
+	if config.Parsed.AuthKey == nil {
 		return "", nil
 	}
-	value := strings.TrimSpace(*config.Config.Parsed.AuthKey)
+	value := strings.TrimSpace(*config.Parsed.AuthKey)
 	if !strings.HasPrefix(value, "file:") {
 		return value, nil
 	}
@@ -78,31 +70,9 @@ func (config *operatorConfig) authKey() (string, error) {
 	return strings.TrimSpace(string(contents)), nil
 }
 
-func (config *operatorConfig) hostname() string {
-	if config.Config.Parsed.Hostname == nil {
-		return ""
+func optionalString(value *string) string {
+	if value != nil {
+		return *value
 	}
-	return *config.Config.Parsed.Hostname
-}
-
-func (config *operatorConfig) controlURL() string {
-	if config.Config.Parsed.ServerURL == nil {
-		return ""
-	}
-	return *config.Config.Parsed.ServerURL
-}
-
-func newOperatorTSNetServer(configuration options, config *operatorConfig, store ipn.StateStore, authKey string) *tsnet.Server {
-	return &tsnet.Server{
-		Dir:        configuration.tsnetStateDir,
-		Store:      store,
-		Hostname:   config.hostname(),
-		AuthKey:    authKey,
-		ControlURL: config.controlURL(),
-		UserLogf:   log.Printf,
-		// The Operator already encoded Connector.spec.tags, or its defaultTags
-		// fallback, into this one-time auth key. Standalone tag settings must not
-		// replace that choice.
-		AdvertiseTags: nil,
-	}
+	return ""
 }

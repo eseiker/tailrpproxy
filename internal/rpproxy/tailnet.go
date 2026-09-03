@@ -7,11 +7,7 @@ var (
 	tailscaleIPv6 = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
 )
 
-func IsTailnetAddress(host string) bool {
-	address, err := netip.ParseAddr(host)
-	if err != nil {
-		return false
-	}
+func IsTailnetAddress(address netip.Addr) bool {
 	address = address.Unmap().WithZone("")
 	return tailscaleIPv4.Contains(address) || tailscaleIPv6.Contains(address)
 }

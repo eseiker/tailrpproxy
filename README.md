@@ -106,10 +106,10 @@ tailrpproxy \
   -tsnet-hostname=tailrpproxy
 ```
 
-The daemon prints the Tailscale login URL and waits until authentication
+The daemon prints the Tailscale login URL once and waits until authentication
 completes. The normal startup timeout does not apply while waiting for this
-interactive login; press Ctrl+C to cancel. Auto mode cannot infer interactive
-intent, so an empty state directory without credentials still selects `native`.
+interactive login; press Ctrl+C to cancel. Auto mode also uses this path when
+the native TUN device or tailscaled LocalAPI socket is unavailable.
 
 ## Container usage
 
@@ -205,21 +205,32 @@ make build
 make build-linux
 ```
 
-`VERSION` contains the tailrpproxy release version. All supported build paths
-stamp Tailscale's `longStamp` and `shortStamp`, so `tailrpproxy -version` and
-the Tailscale admin console report a version such as
-`1.102.3-rpp-0.0.2` instead of `ERR-BuildInfo`.
+`RPP_REVISION` contains the tailrpproxy patch revision. All supported build
+paths derive the main version from the pinned stable `tailscale.com` module and
+stamp Tailscale's `longStamp` and `shortStamp`. For example, Tailscale v1.102.3
+with revision 1 reports `1.102.3-rpp.1` from `tailrpproxy -version` and in the
+Tailscale admin console instead of `ERR-BuildInfo`. Increment `RPP_REVISION`
+for tailrpproxy-only releases. A Tailscale dependency update changes the
+leading version and resets the revision to 1. Release CI compares the new tag
+with the preceding `v*-rpp.*` tag and enforces both the reset and monotonically
+increasing revisions for the same Tailscale version.
 
 Dependabot tracks only the direct `tailscale.com` module and opens a weekly
 update pull request. Because the checked-in version is stable, Dependabot keeps
 following stable releases; CI rejects prerelease and pseudo-version pins. Each
 pull request runs race tests, vet, Linux amd64/arm64 builds, and the
-multi-platform container build. `hack/update-tailscale.sh` performs the same
-stable-only update locally when an immediate refresh is needed. The script also
-aligns the directly imported `wireguard-go` revision with the version required
-by the selected stable Tailscale module.
+multi-platform container build without publishing artifacts. After every check
+passes, a trusted workflow validates that the PR contains only the expected
+dependency and revision files. It resets `RPP_REVISION` to 1 and reruns CI when
+needed, then squash-merges the verified commit, creates its version tag, and
+dispatches release CI. `hack/update-tailscale.sh` performs the same stable-only
+update locally when an immediate refresh is needed. The script also aligns the
+directly imported `wireguard-go` revision with the version required by the
+selected stable Tailscale module.
 
 GitHub Actions uploads Linux amd64 and arm64 binaries as workflow artifacts.
-Pushing a `v*` tag also publishes both binaries and `SHA256SUMS` in a GitHub
-prerelease. Pushes to `main` and `v*` tags publish a multi-platform image to
+Pushing a tag such as `v1.102.3-rpp.1` also publishes both binaries and
+`SHA256SUMS` in a normal GitHub Release. CI rejects a release tag that does not
+match the version derived from `go.mod` and `RPP_REVISION`. Pushes to `main`
+and version tags publish a multi-platform image to
 `ghcr.io/eseiker/tailrpproxy`.

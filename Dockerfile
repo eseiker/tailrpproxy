@@ -4,18 +4,16 @@ FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG RPPROXY_VERSION
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY VERSION ./
+COPY RPP_REVISION ./
 COPY hack ./hack
 COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    RPPROXY_VERSION=$RPPROXY_VERSION RPPROXY_STRIP=1 \
-    OUTPUT=/out/tailrpproxy ./hack/build.sh
+    RPPROXY_STRIP=1 OUTPUT=/out/tailrpproxy ./hack/build.sh
 
 FROM alpine:3.23
 

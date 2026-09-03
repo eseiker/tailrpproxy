@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/eseiker/tailrpproxy/internal/rpproxy"
@@ -22,7 +24,7 @@ import (
 
 const nativeTUNPath = "/dev/net/tun"
 
-type nativePrerequisiteProbe func(string) (bool, string)
+type nativePrerequisiteProbe func(string) error
 type fileModeProbe func(string) (os.FileMode, error)
 
 type options struct {
@@ -74,13 +76,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	switch configuration.transport {
 	case "native":
-		return runNative(configuration, route)
+		return runNative(ctx, configuration, route)
 	case "tsnet":
-		return runTSNet(configuration, route)
+		return runTSNet(ctx, configuration, route)
 	case "operator":
-		return runOperator(configuration, route)
+		return runOperator(ctx, configuration, route)
 	default:
 		return fmt.Errorf("unsupported -transport %q", configuration.transport)
 	}
@@ -149,17 +153,20 @@ func resolveTransport(
 		return "tsnet", "persisted tsnet state detected", nil
 	}
 
-	if available, reason := probeNative(tailscaledSocket); !available {
-		return "tsnet", "native transport unavailable: " + reason, nil
+	if err := probeNative(tailscaledSocket); err != nil {
+		return "tsnet", "native transport unavailable: " + err.Error(), nil
 	}
 	return "native", "native TUN and tailscaled socket detected", nil
 }
 
-func nativePrerequisites(tailscaledSocket string) (bool, string) {
+func nativePrerequisites(tailscaledSocket string) error {
+	if tailscaledSocket = strings.TrimSpace(tailscaledSocket); tailscaledSocket == "" {
+		tailscaledSocket = paths.DefaultTailscaledSocket()
+	}
 	return probeNativePrerequisites(
 		runtime.GOOS,
 		nativeTUNPath,
-		effectiveTailscaledSocket(tailscaledSocket),
+		tailscaledSocket,
 		func(path string) (os.FileMode, error) {
 			info, err := os.Stat(path)
 			if err != nil {
@@ -175,37 +182,30 @@ func probeNativePrerequisites(
 	tunPath,
 	tailscaledSocket string,
 	statMode fileModeProbe,
-) (bool, string) {
+) error {
 	if goos != "linux" {
-		return false, "native transport requires Linux"
+		return errors.New("native transport requires Linux")
 	}
 	tunMode, err := statMode(tunPath)
 	if err != nil {
-		return false, fmt.Sprintf("TUN device %s is unavailable: %v", tunPath, err)
+		return fmt.Errorf("TUN device %s is unavailable: %w", tunPath, err)
 	}
 	if tunMode&os.ModeDevice == 0 || tunMode&os.ModeCharDevice == 0 {
-		return false, fmt.Sprintf("TUN path %s is not a character device", tunPath)
+		return fmt.Errorf("TUN path %s is not a character device", tunPath)
 	}
 
 	tailscaledSocket = strings.TrimSpace(tailscaledSocket)
 	if tailscaledSocket == "" {
-		return false, "tailscaled has no default LocalAPI socket path"
+		return errors.New("tailscaled has no default LocalAPI socket path")
 	}
 	socketMode, err := statMode(tailscaledSocket)
 	if err != nil {
-		return false, fmt.Sprintf("tailscaled socket %s is unavailable: %v", tailscaledSocket, err)
+		return fmt.Errorf("tailscaled socket %s is unavailable: %w", tailscaledSocket, err)
 	}
 	if socketMode&os.ModeSocket == 0 {
-		return false, fmt.Sprintf("tailscaled path %s is not a Unix socket", tailscaledSocket)
+		return fmt.Errorf("tailscaled path %s is not a Unix socket", tailscaledSocket)
 	}
-	return true, "native prerequisites detected"
-}
-
-func effectiveTailscaledSocket(configured string) string {
-	if configured = strings.TrimSpace(configured); configured != "" {
-		return configured
-	}
-	return paths.DefaultTailscaledSocket()
+	return nil
 }
 
 func hasTSNetCredentials(getenv func(string) string) bool {
@@ -301,15 +301,4 @@ func shutdownHealthServer(server *http.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = server.Shutdown(ctx)
-}
-
-func splitCommaList(value string) []string {
-	var values []string
-	for _, item := range strings.Split(value, ",") {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			values = append(values, item)
-		}
-	}
-	return values
 }

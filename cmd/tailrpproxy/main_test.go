@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -139,33 +140,17 @@ func TestProbeNativePrerequisites(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			available, _ := probeNativePrerequisites(test.goos, tunPath, socketPath, func(path string) (os.FileMode, error) {
+			err := probeNativePrerequisites(test.goos, tunPath, socketPath, func(path string) (os.FileMode, error) {
 				mode, ok := test.modes[path]
 				if !ok {
 					return 0, os.ErrNotExist
 				}
 				return mode, nil
 			})
-			if available != test.available {
-				t.Fatalf("available = %t, want %t", available, test.available)
+			if (err == nil) != test.available {
+				t.Fatalf("error = %v, available = %t", err, test.available)
 			}
 		})
-	}
-}
-
-func TestEffectiveTailscaledSocketPrefersConfiguredPath(t *testing.T) {
-	if got := effectiveTailscaledSocket(" /custom/tailscaled.sock "); got != "/custom/tailscaled.sock" {
-		t.Fatalf("socket = %q", got)
-	}
-	if got := effectiveTailscaledSocket(""); got == "" {
-		t.Fatal("default tailscaled socket path is empty")
-	}
-}
-
-func TestSplitCommaList(t *testing.T) {
-	values := splitCommaList("tag:one, tag:two,,")
-	if len(values) != 2 || values[0] != "tag:one" || values[1] != "tag:two" {
-		t.Fatalf("values = %#v", values)
 	}
 }
 
@@ -190,10 +175,10 @@ func mapEnvironment(values map[string]string) func(string) string {
 	}
 }
 
-func nativeReady(string) (bool, string) {
-	return true, "test prerequisites detected"
+func nativeReady(string) error {
+	return nil
 }
 
-func nativeUnavailable(string) (bool, string) {
-	return false, "test prerequisite missing"
+func nativeUnavailable(string) error {
+	return errors.New("test prerequisite missing")
 }

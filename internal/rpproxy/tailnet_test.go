@@ -1,6 +1,9 @@
 package rpproxy
 
-import "testing"
+import (
+	"net/netip"
+	"testing"
+)
 
 func TestIsTailnetAddress(t *testing.T) {
 	tests := map[string]bool{
@@ -9,9 +12,9 @@ func TestIsTailnetAddress(t *testing.T) {
 		"fd7a:115c:a1e0::1234": true,
 		"192.168.1.1":          false,
 		"fd00::1":              false,
-		"not-an-ip":            false,
 	}
-	for address, expected := range tests {
+	for text, expected := range tests {
+		address := netip.MustParseAddr(text)
 		if got := IsTailnetAddress(address); got != expected {
 			t.Errorf("IsTailnetAddress(%q) = %t, want %t", address, got, expected)
 		}

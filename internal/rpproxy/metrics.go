@@ -2,7 +2,6 @@ package rpproxy
 
 import (
 	"fmt"
-	"strings"
 	"sync/atomic"
 )
 
@@ -55,24 +54,24 @@ func (metrics *Metrics) Prometheus() string {
 		ready = 1
 	}
 
-	var output strings.Builder
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_ready gauge\n")
-	fmt.Fprintf(&output, "rppairing_egress_ready %d\n", ready)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_active_streams gauge\n")
-	fmt.Fprintf(&output, "rppairing_egress_active_streams %d\n", snapshot.Active)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_streams_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_streams_total %d\n", snapshot.Total)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_rejected_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_rejected_total %d\n", snapshot.Rejected)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_dial_failures_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_dial_failures_total %d\n", snapshot.DialFailures)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_bytes_to_device_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_bytes_to_device_total %d\n", snapshot.BytesToDevice)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_bytes_to_client_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_bytes_to_client_total %d\n", snapshot.BytesToClient)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_packets_reflected_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_packets_reflected_total %d\n", snapshot.PacketsReflected)
-	fmt.Fprintf(&output, "# TYPE rppairing_egress_packet_bytes_reflected_total counter\n")
-	fmt.Fprintf(&output, "rppairing_egress_packet_bytes_reflected_total %d\n", snapshot.BytesReflected)
-	return output.String()
+	return fmt.Sprintf(`# TYPE rppairing_egress_ready gauge
+rppairing_egress_ready %d
+# TYPE rppairing_egress_active_streams gauge
+rppairing_egress_active_streams %d
+# TYPE rppairing_egress_streams_total counter
+rppairing_egress_streams_total %d
+# TYPE rppairing_egress_rejected_total counter
+rppairing_egress_rejected_total %d
+# TYPE rppairing_egress_dial_failures_total counter
+rppairing_egress_dial_failures_total %d
+# TYPE rppairing_egress_bytes_to_device_total counter
+rppairing_egress_bytes_to_device_total %d
+# TYPE rppairing_egress_bytes_to_client_total counter
+rppairing_egress_bytes_to_client_total %d
+# TYPE rppairing_egress_packets_reflected_total counter
+rppairing_egress_packets_reflected_total %d
+# TYPE rppairing_egress_packet_bytes_reflected_total counter
+rppairing_egress_packet_bytes_reflected_total %d
+`, ready, snapshot.Active, snapshot.Total, snapshot.Rejected, snapshot.DialFailures,
+		snapshot.BytesToDevice, snapshot.BytesToClient, snapshot.PacketsReflected, snapshot.BytesReflected)
 }

@@ -3,10 +3,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 )
 
-func runOperator(options, netip.Prefix) error {
+func runOperator(context.Context, options, netip.Prefix) error {
 	return fmt.Errorf("operator transport requires Linux")
 }

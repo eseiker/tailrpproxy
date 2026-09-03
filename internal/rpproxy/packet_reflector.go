@@ -44,7 +44,7 @@ func (reflector *PacketReflector) Reflect(packet []byte) bool {
 		return false
 	}
 	source := netip.AddrFrom4([4]byte(packet[12:16]))
-	if reflector.requireTailnet && !IsTailnetAddress(source.String()) {
+	if reflector.requireTailnet && !IsTailnetAddress(source) {
 		reflector.metrics.rejected.Add(1)
 		return false
 	}

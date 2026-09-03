@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -33,23 +32,19 @@ func (config Config) withDefaults() Config {
 
 func proxyBidirectional(device, client net.Conn) (toDevice uint64, toClient uint64) {
 	var wait sync.WaitGroup
-	var deviceBytes atomic.Uint64
-	var clientBytes atomic.Uint64
 	wait.Add(2)
 
-	copyOneWay := func(destination, source net.Conn, counter *atomic.Uint64) {
+	copyOneWay := func(destination, source net.Conn, counter *uint64) {
 		defer wait.Done()
 		count, _ := io.Copy(destination, source)
-		if count > 0 {
-			counter.Add(uint64(count))
-		}
+		*counter = uint64(count)
 		if closer, ok := destination.(interface{ CloseWrite() error }); ok {
 			_ = closer.CloseWrite()
 		}
 	}
 
-	go copyOneWay(device, client, &deviceBytes)
-	go copyOneWay(client, device, &clientBytes)
+	go copyOneWay(device, client, &toDevice)
+	go copyOneWay(client, device, &toClient)
 	wait.Wait()
-	return deviceBytes.Load(), clientBytes.Load()
+	return toDevice, toClient
 }

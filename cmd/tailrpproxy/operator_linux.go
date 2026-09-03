@@ -10,13 +10,9 @@ import (
 	"log"
 	"net/netip"
 	"os"
-	"os/signal"
-	"slices"
 	"strings"
-	"syscall"
 	"time"
 
-	"github.com/eseiker/tailrpproxy/internal/rpproxy"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -30,15 +26,12 @@ import (
 
 const operatorFieldManager = "tailrpproxy"
 
-func runOperator(configuration options, route netip.Prefix) error {
+func runOperator(ctx context.Context, configuration options, route netip.Prefix) error {
 	config, err := loadOperatorConfig(os.Getenv("TS_EXPERIMENTAL_VERSIONED_CONFIG_DIR"))
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(config.Config.Parsed.AdvertiseRoutes, route) {
-		return fmt.Errorf("Operator config %q does not advertise required route %s", config.Path, route)
-	}
-	authKey, err := config.authKey()
+	authKey, err := operatorAuthKey(config)
 	if err != nil {
 		return err
 	}
@@ -51,7 +44,7 @@ func runOperator(configuration options, route netip.Prefix) error {
 	if err != nil {
 		return fmt.Errorf("create Kubernetes client: %w", err)
 	}
-	if err := resetForReissuedAuthKey(context.Background(), kubeClient, stateSecret, authKey); err != nil {
+	if err := resetForReissuedAuthKey(ctx, kubeClient, stateSecret, authKey); err != nil {
 		return err
 	}
 	stateStore, err := kubestore.New(log.Printf, stateSecret)
@@ -59,90 +52,24 @@ func runOperator(configuration options, route netip.Prefix) error {
 		return fmt.Errorf("create Kubernetes state store: %w", err)
 	}
 
-	server := newOperatorTSNetServer(configuration, config, stateStore, authKey)
-	reflector, err := rpproxy.NewTCPReflector(
-		server.Dial,
-		route,
-		!configuration.allowNonTailnetSource,
-		rpproxy.Config{
-			DialTimeout:           configuration.dialTimeout,
-			StreamTimeout:         configuration.streamTimeout,
-			MaxConnections:        configuration.maxConnections,
-			MaxConnectionsPerPeer: configuration.maxPerPeer,
+	server := newTSNetServer(configuration, authKey)
+	server.Store = stateStore
+	server.Hostname = optionalString(config.Parsed.Hostname)
+	server.ControlURL = optionalString(config.Parsed.ServerURL)
+	return runTSNetReflector(ctx, configuration, route, tsnetMode{
+		name:   "Operator",
+		server: server,
+		routes: config.Parsed.AdvertiseRoutes,
+		onUpError: func(client *local.Client) {
+			requestAuthKeyReissueIfNeeded(kubeClient, stateSecret, authKey, client)
 		},
-		log.Printf,
-	)
-	if err != nil {
-		return err
-	}
-	deregister := registerSubnetTCPReflector(server, reflector)
-
-	healthServer, err := startHealthServer(configuration.healthListen, reflector.Metrics())
-	if err != nil {
-		return err
-	}
-	defer healthServer.Close()
-
-	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stopSignals()
-	startupContext, cancelStartup := context.WithTimeout(signalContext, configuration.tsnetStartupTimeout)
-	defer cancelStartup()
-
-	localClient, err := server.LocalClient()
-	if err != nil {
-		return fmt.Errorf("start tsnet: %w", err)
-	}
-	status, err := server.Up(startupContext)
-	if err != nil {
-		requestAuthKeyReissueIfNeeded(kubeClient, stateSecret, authKey, localClient)
-		_ = server.Close()
-		return fmt.Errorf("bring up Operator tsnet node: %w", err)
-	}
-	if status.Self == nil {
-		_ = server.Close()
-		return errors.New("tsnet reached Running without self status")
-	}
-
-	if err := storeDeviceID(startupContext, kubeClient, stateSecret, status.Self.ID); err != nil {
-		_ = server.Close()
-		return err
-	}
-	maskedPrefs := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			AdvertiseRoutes: config.Config.Parsed.AdvertiseRoutes,
+		afterUp: func(ctx context.Context, status *ipnstate.Status) error {
+			if err := storeDeviceID(ctx, kubeClient, stateSecret, status.Self.ID); err != nil {
+				return err
+			}
+			return storeDeviceEndpoints(ctx, kubeClient, stateSecret, status)
 		},
-		AdvertiseRoutesSet: true,
-	}
-	if _, err := localClient.EditPrefs(startupContext, maskedPrefs); err != nil {
-		_ = server.Close()
-		return fmt.Errorf("advertise Operator routes: %w", err)
-	}
-	if err := storeDeviceEndpoints(startupContext, kubeClient, stateSecret, status); err != nil {
-		_ = server.Close()
-		return err
-	}
-
-	reflector.Metrics().SetReady(true)
-	log.Printf(
-		"RPPairing Operator reflector ready: hostname=%s ips=%v route=%s mode=source-same-port",
-		config.hostname(),
-		status.TailscaleIPs,
-		route,
-	)
-	<-signalContext.Done()
-	reflector.Metrics().SetReady(false)
-	deregister()
-	_ = server.Close()
-
-	drainContext, cancelDrain := context.WithTimeout(context.Background(), configuration.shutdownTimeout)
-	defer cancelDrain()
-	if err := reflector.Shutdown(drainContext); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("RPPairing reflector drain: %v", err)
-	}
-	healthContext, cancelHealth := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancelHealth()
-	_ = healthServer.Shutdown(healthContext)
-	return nil
+	})
 }
 
 func resetForReissuedAuthKey(ctx context.Context, client kubeclient.Client, secretName, currentAuthKey string) error {

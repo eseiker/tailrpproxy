@@ -10,10 +10,8 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"os/signal"
 	"slices"
 	"strings"
-	"syscall"
 
 	"github.com/eseiker/tailrpproxy/internal/rpproxy"
 	"github.com/jsimonetti/rtnetlink"
@@ -25,7 +23,7 @@ import (
 	"tailscale.com/types/opt"
 )
 
-func runNative(configuration options, route netip.Prefix) error {
+func runNative(ctx context.Context, configuration options, route netip.Prefix) error {
 	if err := requireIPv4Forwarding(); err != nil {
 		return err
 	}
@@ -53,11 +51,13 @@ func runNative(configuration options, route netip.Prefix) error {
 	if err != nil {
 		return err
 	}
-	defer healthServer.Close()
+	defer shutdownHealthServer(healthServer)
 
 	serveError := make(chan error, 1)
 	go func() { serveError <- servePacketReflector(device, reflector) }()
-	reflector.Metrics().SetReady(true)
+	metrics := reflector.Metrics()
+	metrics.SetReady(true)
+	defer metrics.SetReady(false)
 	log.Printf(
 		"RPPairing native TUN reflector ready: interface=%s local=%s peer=%s route=%s",
 		interfaceName,
@@ -66,16 +66,12 @@ func runNative(configuration options, route netip.Prefix) error {
 		route,
 	)
 
-	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stopSignals()
 	select {
 	case err := <-serveError:
-		reflector.Metrics().SetReady(false)
 		return err
-	case <-signalContext.Done():
+	case <-ctx.Done():
 	}
 
-	reflector.Metrics().SetReady(false)
 	_ = device.Close()
 	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), configuration.shutdownTimeout)
 	defer cancelShutdown()
@@ -84,7 +80,6 @@ func runNative(configuration options, route netip.Prefix) error {
 	case <-shutdownContext.Done():
 		log.Printf("native TUN reflector shutdown timed out: %v", shutdownContext.Err())
 	}
-	shutdownHealthServer(healthServer)
 	return nil
 }
 
@@ -131,11 +126,10 @@ func createNativeTUN(name string, mtu int, route netip.Prefix) (tun.Device, stri
 }
 
 func nativeTUNLocalAddress(route netip.Prefix) (netip.Addr, error) {
-	localAddress := route.Addr().Prev()
-	if !localAddress.IsValid() || !localAddress.Is4() {
-		return netip.Addr{}, fmt.Errorf("cannot derive native TUN local address from %s", route)
+	if address := route.Addr().Prev(); address.Is4() {
+		return address, nil
 	}
-	return localAddress, nil
+	return netip.Addr{}, fmt.Errorf("cannot derive native TUN local address from %s", route)
 }
 
 func configureNativeInterface(name string, localAddress, peerAddress netip.Addr) error {
@@ -205,17 +199,9 @@ func nativeRoutePrefs(prefs *ipn.Prefs, route netip.Prefix) (*ipn.MaskedPrefs, e
 	if !slices.Contains(routes, route) {
 		routes = append(routes, route)
 	}
-	otherRouteCount := 0
-	for _, advertisedRoute := range routes {
-		if advertisedRoute != route {
-			otherRouteCount++
-		}
-	}
-	if otherRouteCount > 0 && !prefs.NoSNAT {
-		return nil, errors.New("native mode cannot disable subnet-route SNAT automatically while host tailscaled advertises other routes; configure --snat-subnet-routes=false explicitly")
-	}
-	if otherRouteCount > 0 && prefs.NoStatefulFiltering.EqualBool(false) {
-		return nil, errors.New("native mode cannot disable stateful subnet filtering automatically while host tailscaled advertises other routes; configure --stateful-filtering=false explicitly")
+	hasOtherRoutes := slices.ContainsFunc(routes, func(advertised netip.Prefix) bool { return advertised != route })
+	if hasOtherRoutes && (!prefs.NoSNAT || prefs.NoStatefulFiltering.EqualBool(false)) {
+		return nil, errors.New("native mode cannot change subnet routing policy while host tailscaled advertises other routes; configure --snat-subnet-routes=false and --stateful-filtering=false explicitly")
 	}
 	return &ipn.MaskedPrefs{
 		Prefs: ipn.Prefs{
@@ -230,21 +216,19 @@ func nativeRoutePrefs(prefs *ipn.Prefs, route netip.Prefix) (*ipn.MaskedPrefs, e
 }
 
 func servePacketReflector(device tun.Device, reflector *rpproxy.PacketReflector) error {
-	batchSize := device.BatchSize()
-	if batchSize < 1 {
-		batchSize = 1
-	}
+	batchSize := max(device.BatchSize(), 1)
 	buffers := make([][]byte, batchSize)
 	for index := range buffers {
 		buffers[index] = make([]byte, 65535)
 	}
 	sizes := make([]int, batchSize)
+	reflected := make([][]byte, 0, batchSize)
 	for {
 		count, err := device.Read(buffers, sizes, 0)
 		if err != nil {
 			return fmt.Errorf("read native TUN: %w", err)
 		}
-		reflected := make([][]byte, 0, count)
+		reflected = reflected[:0]
 		for index := 0; index < count; index++ {
 			size := sizes[index]
 			if size <= 0 || size > len(buffers[index]) || !reflector.Reflect(buffers[index][:size]) {

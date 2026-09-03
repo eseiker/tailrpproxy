@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -26,7 +28,20 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Verify stable Tailscale pin
-        run: ./hack/version.sh
+        run: |
+          version=$(./hack/version.sh)
+          expected="$(./hack/version.sh tailscale)-rpp.$(./hack/version.sh revision)"
+          test "$version" = "$expected"
+          if RPPROXY_REVISION=0 ./hack/version.sh >/dev/null 2>&1; then
+            echo "revision 0 was accepted" >&2
+            exit 1
+          fi
+          base=$(./hack/version.sh tailscale)
+          RPPROXY_REVISION=1 RPPROXY_PREVIOUS_VERSION=v0.0.0-rpp.9 ./hack/version.sh release "v${base}-rpp.1"
+          RPPROXY_REVISION=2 RPPROXY_PREVIOUS_VERSION="v${base}-rpp.1" ./hack/version.sh release "v${base}-rpp.2"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            ./hack/version.sh release "$GITHUB_REF_NAME"
+          fi
 
   linux-binaries:
     runs-on: ubuntu-latest
@@ -48,15 +63,10 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.arch }}
         run: |
-          rpp_version=$(cat VERSION)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            rpp_version=${GITHUB_REF_NAME#v}
-          fi
-          RPPROXY_VERSION="$rpp_version" \
-            OUTPUT="dist/tailrpproxy-linux-${GOARCH}" RPPROXY_STRIP=1 \
+          OUTPUT="dist/tailrpproxy-linux-${GOARCH}" RPPROXY_STRIP=1 \
             ./hack/build.sh
           if [[ "$GOARCH" == "amd64" ]]; then
-            expected="tailrpproxy $(RPPROXY_VERSION="$rpp_version" ./hack/version.sh)"
+            expected="tailrpproxy $(./hack/version.sh)"
             actual=$("dist/tailrpproxy-linux-${GOARCH}" -version)
             test "$actual" = "$expected"
           fi
@@ -76,7 +86,7 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -91,25 +101,15 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-      - name: Resolve tailrpproxy version
-        id: build-version
-        run: |
-          rpp_version=$(cat VERSION)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            rpp_version=${GITHUB_REF_NAME#v}
-          fi
-          echo "rpp=$rpp_version" >> "$GITHUB_OUTPUT"
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
       - name: Build and publish
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            RPPROXY_VERSION=${{ steps.build-version.outputs.rpp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -132,18 +132,18 @@ jobs:
         run: |
           cd dist
           sha256sum tailrpproxy-linux-* > SHA256SUMS
-      - name: Publish prerelease
+      - name: Publish release
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+            gh release edit "${GITHUB_REF_NAME}" --prerelease=false --latest
           else
             gh release create "${GITHUB_REF_NAME}" dist/* \
               --title "${GITHUB_REF_NAME}" \
               --generate-notes \
-              --prerelease \
-              --latest=false \
+              --latest \
               --verify-tag
           fi

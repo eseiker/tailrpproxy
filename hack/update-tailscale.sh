@@ -45,3 +45,7 @@ if [ "$resolved_wireguard" != "$wireguard_version" ]; then
 	echo "wireguard-go resolved to $resolved_wireguard, expected $wireguard_version" >&2
 	exit 1
 fi
+if [ "$current" != "$latest" ]; then
+	printf '1\n' >RPP_REVISION
+	echo "reset rpp revision to 1 for $latest"
+fi

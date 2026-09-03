@@ -11,6 +11,5 @@ updates:
     allow:
       - dependency-name: tailscale.com
         dependency-type: direct
-    versioning-strategy: increase
     commit-message:
       prefix: deps

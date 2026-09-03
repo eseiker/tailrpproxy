@@ -27,8 +27,8 @@ signals:
 
 1. `operator` when both `TS_EXPERIMENTAL_VERSIONED_CONFIG_DIR` and
    `TS_KUBE_SECRET` are present.
-2. `tsnet` when `TS_AUTHKEY` or `TS_AUTH_KEY` is present, or when
-   `RPPROXY_TSNET_STATE_DIR` contains `tailscaled.state`.
+2. `tsnet` when `TS_AUTHKEY`, `TS_AUTH_KEY`, or `TS_CLIENT_SECRET` is present,
+   or when `RPPROXY_TSNET_STATE_DIR` contains `tailscaled.state`.
 3. `native` when neither environment is detected.
 
 A partial Operator environment is rejected instead of silently falling back.
@@ -88,6 +88,23 @@ tailrpproxy \
 The auth key is only needed when persisted tsnet state does not contain an
 authenticated node. Approve or auto-approve the synthetic route advertised by
 the tsnet node. The optional tag must be owned by the auth key or OAuth client.
+OAuth login uses `TS_CLIENT_SECRET` and requires at least one `-tsnet-tags`
+value that the OAuth client owns.
+
+To authenticate interactively, select `tsnet` explicitly and omit auth
+credentials:
+
+```sh
+tailrpproxy \
+  -transport=tsnet \
+  -tsnet-state-dir=/var/lib/tailrpproxy \
+  -tsnet-hostname=tailrpproxy
+```
+
+The daemon prints the Tailscale login URL and waits until authentication
+completes. The normal startup timeout does not apply while waiting for this
+interactive login; press Ctrl+C to cancel. Auto mode cannot infer interactive
+intent, so an empty state directory without credentials still selects `native`.
 
 ## Container usage
 
@@ -160,6 +177,10 @@ kubectl apply -k .
 The base Connector omits `spec.tags`, so the Operator uses Helm
 `proxyConfig.defaultTags`. If `spec.tags` is present, that list replaces the
 Operator defaults. The Operator OAuth client must own the selected tags.
+The Operator encodes the selected tags into the one-time auth key consumed by
+`tailrpproxy`; the versioned config file does not carry tags. Consequently,
+`RPPROXY_TSNET_TAGS` only affects standalone `tsnet` mode and never overrides
+`Connector.spec.tags` in Operator mode.
 
 The tailnet policy must auto-approve the synthetic route, allow the iPhone to
 reach that route, and allow the Connector tag to connect back to the iPhone's

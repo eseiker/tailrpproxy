@@ -31,8 +31,12 @@ func TestResolveTransportRejectsPartialOperatorEnvironment(t *testing.T) {
 	}
 }
 
-func TestResolveTransportAutoDetectsAuthKey(t *testing.T) {
-	for _, variable := range []string{"TS_AUTHKEY", "TS_AUTH_KEY"} {
+func TestResolveTransportAutoDetectsTSNetCredentials(t *testing.T) {
+	for _, variable := range []string{
+		"TS_AUTHKEY",
+		"TS_AUTH_KEY",
+		"TS_CLIENT_SECRET",
+	} {
 		t.Run(variable, func(t *testing.T) {
 			transport, _, err := resolveTransport("auto", "", mapEnvironment(map[string]string{
 				variable: "tskey-auth-test",

@@ -2,13 +2,16 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/conffile"
 	"tailscale.com/tailcfg"
+	"tailscale.com/tsnet"
 )
 
 type operatorConfig struct {
@@ -87,4 +90,19 @@ func (config *operatorConfig) controlURL() string {
 		return ""
 	}
 	return *config.Config.Parsed.ServerURL
+}
+
+func newOperatorTSNetServer(configuration options, config *operatorConfig, store ipn.StateStore, authKey string) *tsnet.Server {
+	return &tsnet.Server{
+		Dir:        configuration.tsnetStateDir,
+		Store:      store,
+		Hostname:   config.hostname(),
+		AuthKey:    authKey,
+		ControlURL: config.controlURL(),
+		UserLogf:   log.Printf,
+		// The Operator already encoded Connector.spec.tags, or its defaultTags
+		// fallback, into this one-time auth key. Standalone tag settings must not
+		// replace that choice.
+		AdvertiseTags: nil,
+	}
 }

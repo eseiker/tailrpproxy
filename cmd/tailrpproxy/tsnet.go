@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/eseiker/tailrpproxy/internal/rpproxy"
 	"tailscale.com/ipn"
@@ -18,10 +19,11 @@ import (
 )
 
 func runTSNet(configuration options, route netip.Prefix) error {
+	authKey := firstNonEmpty(os.Getenv("TS_AUTHKEY"), os.Getenv("TS_AUTH_KEY"))
 	server := &tsnet.Server{
 		Dir:           configuration.tsnetStateDir,
 		Hostname:      configuration.tsnetHostname,
-		AuthKey:       firstNonEmpty(os.Getenv("TS_AUTHKEY"), os.Getenv("TS_AUTH_KEY")),
+		AuthKey:       authKey,
 		AdvertiseTags: splitCommaList(configuration.tsnetTags),
 		UserLogf:      log.Printf,
 	}
@@ -47,21 +49,35 @@ func runTSNet(configuration options, route netip.Prefix) error {
 
 	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	startupContext, cancelStartup := context.WithTimeout(signalContext, configuration.tsnetStartupTimeout)
+	interactiveLogin := !hasTSNetCredentials(os.Getenv)
+	startupContext, cancelStartup := tsnetUpContext(
+		signalContext,
+		configuration.tsnetStartupTimeout,
+		interactiveLogin,
+	)
 	defer cancelStartup()
+	if interactiveLogin {
+		log.Printf("No tsnet credentials configured; waiting for interactive login. Open the Tailscale auth URL printed below or press Ctrl+C to cancel.")
+	}
 
 	localClient, err := server.LocalClient()
 	if err != nil {
 		return fmt.Errorf("start tsnet: %w", err)
 	}
 	status, err := server.Up(startupContext)
+	cancelStartup()
 	if err != nil {
+		if signalContext.Err() != nil && errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return fmt.Errorf("bring up tsnet node: %w", err)
 	}
 	if status.Self == nil {
 		return errors.New("tsnet reached Running without self status")
 	}
-	if _, err := localClient.EditPrefs(startupContext, &ipn.MaskedPrefs{
+	configureContext, cancelConfigure := context.WithTimeout(signalContext, configuration.tsnetStartupTimeout)
+	defer cancelConfigure()
+	if _, err := localClient.EditPrefs(configureContext, &ipn.MaskedPrefs{
 		Prefs: ipn.Prefs{
 			AdvertiseRoutes: []netip.Prefix{route},
 		},
@@ -89,6 +105,13 @@ func runTSNet(configuration options, route netip.Prefix) error {
 	}
 	shutdownHealthServer(healthServer)
 	return nil
+}
+
+func tsnetUpContext(parent context.Context, timeout time.Duration, interactive bool) (context.Context, context.CancelFunc) {
+	if interactive {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, timeout)
 }
 
 // registerSubnetTCPReflector isolates the tsnet interception API from the

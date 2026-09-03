@@ -26,7 +26,6 @@ import (
 	"tailscale.com/kube/kubeclient"
 	"tailscale.com/kube/kubetypes"
 	"tailscale.com/tailcfg"
-	"tailscale.com/tsnet"
 )
 
 const operatorFieldManager = "tailrpproxy"
@@ -60,14 +59,7 @@ func runOperator(configuration options, route netip.Prefix) error {
 		return fmt.Errorf("create Kubernetes state store: %w", err)
 	}
 
-	server := &tsnet.Server{
-		Dir:        configuration.tsnetStateDir,
-		Store:      stateStore,
-		Hostname:   config.hostname(),
-		AuthKey:    authKey,
-		ControlURL: config.controlURL(),
-		UserLogf:   log.Printf,
-	}
+	server := newOperatorTSNetServer(configuration, config, stateStore, authKey)
 	reflector, err := rpproxy.NewTCPReflector(
 		server.Dial,
 		route,

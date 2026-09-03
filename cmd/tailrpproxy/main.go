@@ -116,8 +116,8 @@ func resolveTransport(requested, tsnetStateDir string, getenv func(string) strin
 		return "operator", "Tailscale Operator config and state Secret detected", nil
 	}
 
-	if strings.TrimSpace(getenv("TS_AUTHKEY")) != "" || strings.TrimSpace(getenv("TS_AUTH_KEY")) != "" {
-		return "tsnet", "tsnet auth key detected", nil
+	if hasTSNetCredentials(getenv) {
+		return "tsnet", "tsnet credentials detected", nil
 	}
 	stateExists, err := tsnetStateExists(tsnetStateDir)
 	if err != nil {
@@ -128,6 +128,19 @@ func resolveTransport(requested, tsnetStateDir string, getenv func(string) strin
 	}
 
 	return "native", "no Operator or tsnet environment detected", nil
+}
+
+func hasTSNetCredentials(getenv func(string) string) bool {
+	for _, name := range []string{
+		"TS_AUTHKEY",
+		"TS_AUTH_KEY",
+		"TS_CLIENT_SECRET",
+	} {
+		if strings.TrimSpace(getenv(name)) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func tsnetStateExists(directory string) (bool, error) {

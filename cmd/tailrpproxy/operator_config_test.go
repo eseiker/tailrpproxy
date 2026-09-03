@@ -57,6 +57,26 @@ func TestOperatorConfigReadsRelativeAuthKeyFile(t *testing.T) {
 	}
 }
 
+func TestOperatorTSNetServerDoesNotOverrideIssuedAuthKeyTags(t *testing.T) {
+	directory := t.TempDir()
+	writeOperatorConfig(t, directory, int(tailcfg.CurrentCapabilityVersion), "operator-node")
+	config, err := loadOperatorConfig(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := newOperatorTSNetServer(options{
+		tsnetStateDir: directory,
+		tsnetTags:     "tag:standalone-must-not-override-operator",
+	}, config, nil, "tskey-operator-issued")
+	if len(server.AdvertiseTags) != 0 {
+		t.Fatalf("AdvertiseTags = %#v, want none so the Operator-issued auth key controls tags", server.AdvertiseTags)
+	}
+	if server.AuthKey != "tskey-operator-issued" {
+		t.Fatalf("AuthKey = %q, want Operator-issued key", server.AuthKey)
+	}
+}
+
 func writeOperatorConfig(t *testing.T, directory string, version int, hostname string) {
 	t.Helper()
 	contents := fmt.Sprintf(`{"version":"alpha0","hostname":%q}`, hostname)

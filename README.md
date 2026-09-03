@@ -254,3 +254,20 @@ Pushing a tag such as `v1.102.3-rpp.1` also publishes both binaries and
 match the version derived from `go.mod` and `RPP_REVISION`. Pushes to `main`
 and version tags publish a multi-platform image to
 `ghcr.io/eseiker/tailrpproxy`.
+
+## Credits
+
+- [SideStore](https://github.com/SideStore/SideStore) for RPPairing-based
+  on-device app installation and refresh.
+- [xddxdd/sidestore-vpn](https://github.com/xddxdd/sidestore-vpn) for the
+  network-wide packet-reflection design and its public-domain implementation.
+- [StosVPN](https://github.com/SideStore/StosVPN) for the SideStore loopback
+  tunnel approach.
+- [Tailscale](https://github.com/tailscale/tailscale) for the tailnet, tsnet,
+  and Kubernetes Operator building blocks used by this project.
+
+## License
+
+tailrpproxy's original code is released into the public domain under the
+[Unlicense](LICENSE). Third-party components and dependencies retain their
+respective licenses.

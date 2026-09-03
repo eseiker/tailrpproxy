@@ -1,0 +1,3 @@
+images:
+  - path: spec/statefulSet/pod/tailscaleContainer/image
+    kind: ProxyClass

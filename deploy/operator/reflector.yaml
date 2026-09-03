@@ -1,0 +1,30 @@
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: tailrpproxy
+spec:
+  statefulSet:
+    pod:
+      tailscaleContainer:
+        image: tailrpproxy:local
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: RPPROXY_SYNTHETIC_ROUTE
+            value: 10.7.0.1/32
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+---
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: tailrpproxy
+spec:
+  hostname: tailrpproxy
+  proxyClass: tailrpproxy
+  subnetRouter:
+    advertiseRoutes:
+      - 10.7.0.1/32

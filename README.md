@@ -178,5 +178,6 @@ make build-linux
 ```
 
 GitHub Actions uploads Linux amd64 and arm64 binaries as workflow artifacts.
-Pushes to `main` and `v*` tags publish a multi-platform image to
+Pushing a `v*` tag also publishes both binaries and `SHA256SUMS` in a GitHub
+prerelease. Pushes to `main` and `v*` tags publish a multi-platform image to
 `ghcr.io/eseiker/tailrpproxy`.

@@ -11,12 +11,19 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/eseiker/tailrpproxy/internal/rpproxy"
+	"tailscale.com/paths"
 	tsversion "tailscale.com/version"
 )
+
+const nativeTUNPath = "/dev/net/tun"
+
+type nativePrerequisiteProbe func(string) (bool, string)
+type fileModeProbe func(string) (os.FileMode, error)
 
 type options struct {
 	transport             string
@@ -53,7 +60,9 @@ func run() error {
 	selectedTransport, selectionReason, err := resolveTransport(
 		configuration.transport,
 		configuration.tsnetStateDir,
+		configuration.tailscaledSocket,
 		os.Getenv,
+		nativePrerequisites,
 	)
 	if err != nil {
 		return err
@@ -100,7 +109,13 @@ func parseFlags() options {
 	return configuration
 }
 
-func resolveTransport(requested, tsnetStateDir string, getenv func(string) string) (string, string, error) {
+func resolveTransport(
+	requested,
+	tsnetStateDir,
+	tailscaledSocket string,
+	getenv func(string) string,
+	probeNative nativePrerequisiteProbe,
+) (string, string, error) {
 	requested = strings.ToLower(strings.TrimSpace(requested))
 	if requested == "" {
 		requested = "auto"
@@ -134,7 +149,63 @@ func resolveTransport(requested, tsnetStateDir string, getenv func(string) strin
 		return "tsnet", "persisted tsnet state detected", nil
 	}
 
-	return "native", "no Operator or tsnet environment detected", nil
+	if available, reason := probeNative(tailscaledSocket); !available {
+		return "tsnet", "native transport unavailable: " + reason, nil
+	}
+	return "native", "native TUN and tailscaled socket detected", nil
+}
+
+func nativePrerequisites(tailscaledSocket string) (bool, string) {
+	return probeNativePrerequisites(
+		runtime.GOOS,
+		nativeTUNPath,
+		effectiveTailscaledSocket(tailscaledSocket),
+		func(path string) (os.FileMode, error) {
+			info, err := os.Stat(path)
+			if err != nil {
+				return 0, err
+			}
+			return info.Mode(), nil
+		},
+	)
+}
+
+func probeNativePrerequisites(
+	goos,
+	tunPath,
+	tailscaledSocket string,
+	statMode fileModeProbe,
+) (bool, string) {
+	if goos != "linux" {
+		return false, "native transport requires Linux"
+	}
+	tunMode, err := statMode(tunPath)
+	if err != nil {
+		return false, fmt.Sprintf("TUN device %s is unavailable: %v", tunPath, err)
+	}
+	if tunMode&os.ModeDevice == 0 || tunMode&os.ModeCharDevice == 0 {
+		return false, fmt.Sprintf("TUN path %s is not a character device", tunPath)
+	}
+
+	tailscaledSocket = strings.TrimSpace(tailscaledSocket)
+	if tailscaledSocket == "" {
+		return false, "tailscaled has no default LocalAPI socket path"
+	}
+	socketMode, err := statMode(tailscaledSocket)
+	if err != nil {
+		return false, fmt.Sprintf("tailscaled socket %s is unavailable: %v", tailscaledSocket, err)
+	}
+	if socketMode&os.ModeSocket == 0 {
+		return false, fmt.Sprintf("tailscaled path %s is not a Unix socket", tailscaledSocket)
+	}
+	return true, "native prerequisites detected"
+}
+
+func effectiveTailscaledSocket(configured string) string {
+	if configured = strings.TrimSpace(configured); configured != "" {
+		return configured
+	}
+	return paths.DefaultTailscaledSocket()
 }
 
 func hasTSNetCredentials(getenv func(string) string) bool {

@@ -29,11 +29,16 @@ signals:
    `TS_KUBE_SECRET` are present.
 2. `tsnet` when `TS_AUTHKEY`, `TS_AUTH_KEY`, or `TS_CLIENT_SECRET` is present,
    or when `RPPROXY_TSNET_STATE_DIR` contains `tailscaled.state`.
-3. `native` when neither environment is detected.
+3. `native` when neither environment is detected and both `/dev/net/tun` and
+   the configured or default tailscaled LocalAPI socket are available.
+4. `tsnet` when native prerequisites are unavailable. With no credentials or
+   persisted state, this path prints an interactive login URL.
 
 A partial Operator environment is rejected instead of silently falling back.
 Set `RPPROXY_TRANSPORT` or pass `-transport` to force `native`, `tsnet`, or
 `operator`; a command-line flag overrides the environment variable.
+Explicit `native` mode does not fall back, so configuration errors remain
+visible when that transport is requested intentionally.
 
 ## Native host mode
 

@@ -1,5 +1,7 @@
 # tailrpproxy
 
+> **Usage:** `docker run ghcr.io/eseiker/tailrpproxy:latest`
+
 `tailrpproxy` reflects SideStore RPPairing connections through a Tailscale
 tailnet. Every transport exposes the same synthetic subnet route. The default
 route is `10.7.0.1/32`; there is no fixed proxy port or application framing
@@ -168,32 +170,50 @@ The standalone binary serves health and aggregate metrics on
 
 ## Kubernetes Operator
 
-Build and publish the container, then set the image in `deploy/operator`:
+The plain manifest in `deploy/operator/tailrpproxy.yaml` replaces a Connector's
+Tailscale container with `tailrpproxy` and advertises the default synthetic
+route:
 
 ```sh
-docker build -t ghcr.io/eseiker/tailrpproxy:dev .
-docker push ghcr.io/eseiker/tailrpproxy:dev
-
-cd deploy/operator
-kustomize edit set image tailrpproxy=ghcr.io/eseiker/tailrpproxy:dev
-kubectl apply -k .
+kubectl apply -f deploy/operator/tailrpproxy.yaml
+kubectl get proxyclass,connector tailrpproxy
 ```
 
-The base Connector omits `spec.tags`, so the Operator uses Helm
-`proxyConfig.defaultTags`. If `spec.tags` is present, that list replaces the
-Operator defaults. The Operator OAuth client must own the selected tags.
-The Operator encodes the selected tags into the one-time auth key consumed by
-`tailrpproxy`; the versioned config file does not carry tags. Consequently,
-`RPPROXY_TSNET_TAGS` only affects standalone `tsnet` mode and never overrides
-`Connector.spec.tags` in Operator mode.
+The `ProxyClass` and `Connector` are cluster-scoped. The Operator creates the
+StatefulSet and its state Secret in the Operator namespace, normally
+`tailscale`; a namespace on either custom resource does not move that workload.
 
-The tailnet policy must auto-approve the synthetic route, allow the iPhone to
-reach that route, and allow the Connector tag to connect back to the iPhone's
-RPPairing port.
+The Operator performs authentication and supplies the one-time auth key and
+mutable state Secret. Do not add `TS_AUTHKEY` or `TSNET_FORCE_LOGIN` to the
+`ProxyClass`. The manifest omits `spec.tags`, so the Connector uses the
+Operator's `proxyConfig.defaultTags` (normally `tag:k8s`). If you add
+`spec.tags`, the Operator OAuth client must own those tags.
+
+Before applying the manifest:
+
+- Allow the Operator namespace to run the privileged Connector Pod required by
+  the Operator's subnet-router template. A Pod Security `baseline` policy will
+  reject it.
+- Ensure every node eligible to run the Pod can reach the Kubernetes API
+  Service. `tailrpproxy` cannot read or update its state Secret otherwise.
+- Auto-approve or manually approve `10.7.0.1/32`, and allow the iOS device to
+  reach that route and the Connector tag to connect back to the device's
+  RPPairing port.
+
+The two `reloader.stakater.com/auto: "false"` annotations are intentional. The
+Operator state Secret changes during normal tsnet startup. A Reloader instance
+started with `--auto-reload-all=true` can otherwise roll the StatefulSet during
+authentication and leave startup failing with `tsnet.Up: context canceled`.
+
+The image uses `RPPROXY_SYNTHETIC_ROUTE=10.7.0.1/32` by default. If you change
+the Connector's advertised route, set the same value on
+`spec.statefulSet.pod.tailscaleContainer.env`. One Connector handles any number
+of iOS peers dynamically; it does not need a per-device address map.
 
 Replacing `tailscaleContainer` relies on the Operator's internal config and
 state Secret contract. Test the image against each Operator upgrade and keep
-the `tailscale.com` module version aligned with the deployed Operator.
+the `tailscale.com` module version aligned with the deployed Operator. Pin a
+release tag or digest instead of `latest` for reproducible production rollouts.
 
 ## Build
 

@@ -4,26 +4,19 @@ metadata:
   name: tailrpproxy
 spec:
   statefulSet:
+    annotations:
+      reloader.stakater.com/auto: "false"
     pod:
+      annotations:
+        reloader.stakater.com/auto: "false"
       tailscaleContainer:
-        image: tailrpproxy:local
-        imagePullPolicy: IfNotPresent
-        env:
-          - name: RPPROXY_SYNTHETIC_ROUTE
-            value: 10.7.0.1/32
-        resources:
-          requests:
-            cpu: 25m
-            memory: 64Mi
-          limits:
-            memory: 256Mi
+        image: ghcr.io/eseiker/tailrpproxy:latest
 ---
 apiVersion: tailscale.com/v1alpha1
 kind: Connector
 metadata:
   name: tailrpproxy
 spec:
-  hostname: tailrpproxy
   proxyClass: tailrpproxy
   subnetRouter:
     advertiseRoutes:

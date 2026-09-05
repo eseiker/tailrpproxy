@@ -53,12 +53,16 @@ func newTSNetServer(configuration options, authKey string) *tsnet.Server {
 		Dir:      configuration.tsnetStateDir,
 		Hostname: configuration.tsnetHostname,
 		AuthKey:  authKey,
+		Port:     configuration.tsnetPort,
 	}
 }
 
 func runTSNetReflector(ctx context.Context, configuration options, route netip.Prefix, mode tsnetMode) error {
 	if !slices.Contains(mode.routes, route) {
 		return fmt.Errorf("%s does not advertise required route %s", mode.name, route)
+	}
+	if mode.server.Port != 0 {
+		log.Printf("%s using fixed WireGuard UDP port %d", mode.name, mode.server.Port)
 	}
 	mode.server.UserLogf = logAuthURLOnce(mode.server.UserLogf)
 	reflector, err := rpproxy.NewTCPReflector(

@@ -7,6 +7,18 @@ import (
 	"time"
 )
 
+func TestNewTSNetServerConfiguresOptionalPort(t *testing.T) {
+	server := newTSNetServer(options{}, "")
+	if server.Port != 0 {
+		t.Fatalf("default port = %d, want 0", server.Port)
+	}
+
+	server = newTSNetServer(options{tsnetPort: 41641}, "")
+	if server.Port != 41641 {
+		t.Fatalf("fixed port = %d, want 41641", server.Port)
+	}
+}
+
 func TestLogAuthURLOnce(t *testing.T) {
 	var messages []string
 	logf := logAuthURLOnce(func(format string, args ...any) {

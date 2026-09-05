@@ -42,6 +42,7 @@ type options struct {
 	tsnetStateDir         string
 	tsnetHostname         string
 	tsnetTags             string
+	tsnetPort             uint16
 	tsnetStartupTimeout   time.Duration
 	nativeTUNName         string
 	nativeTUNMTU          int
@@ -76,6 +77,9 @@ func run() error {
 	}
 	configuration.transport = selectedTransport
 	log.Printf("transport selected: %s (%s)", selectedTransport, selectionReason)
+	if configuration.tsnetPort != 0 && selectedTransport == "native" {
+		log.Printf("ignoring -tsnet-port=%d in native mode; host tailscaled owns the UDP port", configuration.tsnetPort)
+	}
 
 	route, err := parseSyntheticRoute(configuration.syntheticRoute)
 	if err != nil {
@@ -97,6 +101,7 @@ func run() error {
 
 func parseFlags() (options, error) {
 	var configuration options
+	tsnetPort := strings.TrimSpace(os.Getenv("RPPROXY_TSNET_PORT"))
 	verbose, err := envBool("RPPROXY_VERBOSE")
 	if err != nil {
 		return configuration, err
@@ -114,13 +119,31 @@ func parseFlags() (options, error) {
 	flag.StringVar(&configuration.tsnetStateDir, "tsnet-state-dir", strings.TrimSpace(os.Getenv("RPPROXY_TSNET_STATE_DIR")), "persistent tsnet state directory")
 	flag.StringVar(&configuration.tsnetHostname, "tsnet-hostname", envOrDefault("RPPROXY_TSNET_HOSTNAME", "tailrpproxy"), "tsnet machine hostname")
 	flag.StringVar(&configuration.tsnetTags, "tsnet-tags", strings.TrimSpace(os.Getenv("RPPROXY_TSNET_TAGS")), "comma-separated tsnet tags")
+	flag.StringVar(&tsnetPort, "tsnet-port", tsnetPort, "fixed tsnet WireGuard UDP port; zero selects a port automatically")
 	flag.DurationVar(&configuration.tsnetStartupTimeout, "tsnet-startup-timeout", 45*time.Second, "Tailscale startup and configuration timeout")
 	flag.StringVar(&configuration.nativeTUNName, "native-tun-name", envOrDefault("RPPROXY_NATIVE_TUN_NAME", "tailrpproxy"), "Linux TUN interface name for native mode")
 	flag.IntVar(&configuration.nativeTUNMTU, "native-tun-mtu", 1500, "Linux TUN interface MTU for native mode")
 	flag.StringVar(&configuration.tailscaledSocket, "tailscaled-socket", strings.TrimSpace(os.Getenv("RPPROXY_TAILSCALED_SOCKET")), "host tailscaled LocalAPI socket path")
 	flag.BoolVar(&configuration.printVersion, "version", false, "print version information and exit")
 	flag.Parse()
+	port, err := parseTSNetPort(tsnetPort)
+	if err != nil {
+		return configuration, fmt.Errorf("-tsnet-port: %w", err)
+	}
+	configuration.tsnetPort = port
 	return configuration, nil
+}
+
+func parseTSNetPort(value string) (uint16, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	port, err := strconv.ParseUint(value, 10, 16)
+	if err != nil {
+		return 0, fmt.Errorf("must be an integer from 0 through 65535, got %q", value)
+	}
+	return uint16(port), nil
 }
 
 func envBool(name string) (bool, error) {

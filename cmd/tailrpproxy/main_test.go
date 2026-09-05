@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func TestParseTSNetPort(t *testing.T) {
+	tests := []struct {
+		value string
+		want  uint16
+		valid bool
+	}{
+		{value: "", valid: true},
+		{value: "0", valid: true},
+		{value: "41641", want: 41641, valid: true},
+		{value: "65535", want: 65535, valid: true},
+		{value: "-1"},
+		{value: "65536"},
+		{value: "not-a-port"},
+	}
+	for _, test := range tests {
+		t.Run(test.value, func(t *testing.T) {
+			got, err := parseTSNetPort(test.value)
+			if (err == nil) != test.valid {
+				t.Fatalf("parseTSNetPort(%q) error = %v, valid = %t", test.value, err, test.valid)
+			}
+			if got != test.want {
+				t.Fatalf("parseTSNetPort(%q) = %d, want %d", test.value, got, test.want)
+			}
+		})
+	}
+}
+
 func TestResolveTransportAutoDetectsOperator(t *testing.T) {
 	transport, _, err := resolveTransport("auto", "", "", mapEnvironment(map[string]string{
 		"TS_EXPERIMENTAL_VERSIONED_CONFIG_DIR": "/etc/tsconfig",

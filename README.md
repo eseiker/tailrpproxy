@@ -162,6 +162,8 @@ Container environment defaults are:
 `RPPROXY_TSNET_TAGS` also map to their corresponding command-line options.
 Set `RPPROXY_VERBOSE=true` or pass `-verbose` to include stream direction and
 termination details in connection logs.
+`RPPROXY_TSNET_PORT` maps to `-tsnet-port`; zero or unset lets tsnet select an
+available WireGuard UDP port.
 
 The standalone binary serves health and aggregate metrics on
 `127.0.0.1:9090` by default:
@@ -206,6 +208,12 @@ The two `reloader.stakater.com/auto: "false"` annotations are intentional. The
 Operator state Secret changes during normal tsnet startup. A Reloader instance
 started with `--auto-reload-all=true` can otherwise roll the StatefulSet during
 authentication and leave startup failing with `tsnet.Up: context canceled`.
+
+For direct-path experiments, set `RPPROXY_TSNET_PORT=41641` on the generated
+container and allow UDP port `41641` in the Pod's ingress policy. A fixed port
+applies only to `tsnet` and `operator`; `native` continues to use the host
+`tailscaled` UDP socket. Pods can reuse the same port on distinct Pod IPs, but
+`hostNetwork` or `hostPort` workloads can conflict on the same node.
 
 The image uses `RPPROXY_SYNTHETIC_ROUTE=10.7.0.1/32` by default. If you change
 the Connector's advertised route, set the same value on

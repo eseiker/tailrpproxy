@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,7 @@ type options struct {
 	maxPerPeer            int
 	healthListen          string
 	syntheticRoute        string
+	verbose               bool
 	tsnetStateDir         string
 	tsnetHostname         string
 	tsnetTags             string
@@ -54,7 +56,10 @@ func main() {
 }
 
 func run() error {
-	configuration := parseFlags()
+	configuration, err := parseFlags()
+	if err != nil {
+		return err
+	}
 	if configuration.printVersion {
 		fmt.Printf("tailrpproxy %s\n", tsversion.Long())
 		return nil
@@ -90,8 +95,12 @@ func run() error {
 	}
 }
 
-func parseFlags() options {
+func parseFlags() (options, error) {
 	var configuration options
+	verbose, err := envBool("RPPROXY_VERBOSE")
+	if err != nil {
+		return configuration, err
+	}
 	flag.StringVar(&configuration.transport, "transport", envOrDefault("RPPROXY_TRANSPORT", "auto"), "tailnet transport: auto, native, tsnet, or operator")
 	flag.BoolVar(&configuration.allowNonTailnetSource, "allow-non-tailnet-source", false, "allow reflection for source addresses outside the Tailscale ranges")
 	flag.DurationVar(&configuration.dialTimeout, "dial-timeout", 10*time.Second, "reflected TCP dial timeout")
@@ -101,6 +110,7 @@ func parseFlags() options {
 	flag.IntVar(&configuration.maxPerPeer, "max-connections-per-peer", 8, "maximum concurrent reflected TCP streams per source peer")
 	flag.StringVar(&configuration.healthListen, "health-listen", envOrDefault("RPPROXY_HEALTH_LISTEN", "127.0.0.1:9090"), "health and metrics listen address; empty disables it")
 	flag.StringVar(&configuration.syntheticRoute, "synthetic-route", envOrDefault("RPPROXY_SYNTHETIC_ROUTE", "10.7.0.1/32"), "single IPv4 route reflected to the source peer")
+	flag.BoolVar(&configuration.verbose, "verbose", verbose, "include stream direction and termination details in logs")
 	flag.StringVar(&configuration.tsnetStateDir, "tsnet-state-dir", strings.TrimSpace(os.Getenv("RPPROXY_TSNET_STATE_DIR")), "persistent tsnet state directory")
 	flag.StringVar(&configuration.tsnetHostname, "tsnet-hostname", envOrDefault("RPPROXY_TSNET_HOSTNAME", "tailrpproxy"), "tsnet machine hostname")
 	flag.StringVar(&configuration.tsnetTags, "tsnet-tags", strings.TrimSpace(os.Getenv("RPPROXY_TSNET_TAGS")), "comma-separated tsnet tags")
@@ -110,7 +120,19 @@ func parseFlags() options {
 	flag.StringVar(&configuration.tailscaledSocket, "tailscaled-socket", strings.TrimSpace(os.Getenv("RPPROXY_TAILSCALED_SOCKET")), "host tailscaled LocalAPI socket path")
 	flag.BoolVar(&configuration.printVersion, "version", false, "print version information and exit")
 	flag.Parse()
-	return configuration
+	return configuration, nil
+}
+
+func envBool(name string) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return false, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean, got %q", name, value)
+	}
+	return parsed, nil
 }
 
 func resolveTransport(
@@ -257,6 +279,7 @@ func streamConfig(configuration options) rpproxy.Config {
 		StreamTimeout:         configuration.streamTimeout,
 		MaxConnections:        configuration.maxConnections,
 		MaxConnectionsPerPeer: configuration.maxPerPeer,
+		Verbose:               configuration.verbose,
 	}
 }
 

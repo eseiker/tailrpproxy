@@ -169,6 +169,32 @@ func TestParseSyntheticRoute(t *testing.T) {
 	}
 }
 
+func TestEnvBool(t *testing.T) {
+	const name = "RPPROXY_TEST_BOOL"
+	for _, test := range []struct {
+		value string
+		want  bool
+		valid bool
+	}{
+		{"", false, true},
+		{"true", true, true},
+		{"1", true, true},
+		{"false", false, true},
+		{"invalid", false, false},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv(name, test.value)
+			got, err := envBool(name)
+			if (err == nil) != test.valid {
+				t.Fatalf("envBool error = %v, valid = %t", err, test.valid)
+			}
+			if got != test.want {
+				t.Fatalf("envBool = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func mapEnvironment(values map[string]string) func(string) string {
 	return func(name string) string {
 		return values[name]

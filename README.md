@@ -160,6 +160,8 @@ Container environment defaults are:
 
 `RPPROXY_TAILSCALED_SOCKET`, `RPPROXY_TSNET_HOSTNAME`, and
 `RPPROXY_TSNET_TAGS` also map to their corresponding command-line options.
+Set `RPPROXY_VERBOSE=true` or pass `-verbose` to include stream direction and
+termination details in connection logs.
 
 The standalone binary serves health and aggregate metrics on
 `127.0.0.1:9090` by default:

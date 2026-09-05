@@ -120,16 +120,15 @@ func (reflector *TCPReflector) handle(client net.Conn, src, dst netip.AddrPort) 
 	}
 
 	started := time.Now()
-	toDevice, toClient := proxyBidirectional(device, client)
-	reflector.metrics.bytesToDevice.Add(toDevice)
-	reflector.metrics.bytesToClient.Add(toClient)
+	result := proxyBidirectional(device, client)
+	reflector.metrics.bytesToDevice.Add(result.toDevice.bytes)
+	reflector.metrics.bytesToClient.Add(result.toClient.bytes)
 	reflector.logf(
-		"reflected stream closed after %s: source=%s destination=%s to-device=%d to-client=%d",
+		"stream closed after %s: src=%s dst=%s %s",
 		time.Since(started).Round(time.Millisecond),
 		src,
 		dst,
-		toDevice,
-		toClient,
+		streamResultSummary(result, reflector.config.Verbose),
 	)
 }
 

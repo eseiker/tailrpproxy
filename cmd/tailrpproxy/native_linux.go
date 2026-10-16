@@ -217,30 +217,29 @@ func nativeRoutePrefs(prefs *ipn.Prefs, route netip.Prefix) (*ipn.MaskedPrefs, e
 
 func servePacketReflector(device tun.Device, reflector *rpproxy.PacketReflector) error {
 	batchSize := max(device.BatchSize(), 1)
-	buffers := make([][]byte, batchSize)
-	for index := range buffers {
-		buffers[index] = make([]byte, 65535)
-	}
-	sizes := make([]int, batchSize)
+	slab := make([]byte, batchSize*(65535+tun.ReadPacketSpacing)+tun.ReadPacketSpacing)
+	packets := make([]tun.ReadPacket, batchSize)
 	reflected := make([][]byte, 0, batchSize)
 	for {
-		count, err := device.Read(buffers, sizes, 0)
-		if err != nil {
-			return fmt.Errorf("read native TUN: %w", err)
-		}
+		count, readErr := device.Read(slab, packets)
 		reflected = reflected[:0]
-		for index := 0; index < count; index++ {
-			size := sizes[index]
-			if size <= 0 || size > len(buffers[index]) || !reflector.Reflect(buffers[index][:size]) {
+		for _, packet := range packets[:count] {
+			if packet.Offset < tun.ReadPacketSpacing || packet.Offset > len(slab) || packet.Size <= 0 || packet.Size > len(slab)-packet.Offset {
 				continue
 			}
-			reflected = append(reflected, buffers[index][:size])
+			buffer := slab[packet.Offset : packet.Offset+packet.Size]
+			if reflector.Reflect(buffer) {
+				end := packet.Offset + packet.Size
+				reflected = append(reflected, slab[packet.Offset-tun.ReadPacketSpacing:end:end])
+			}
 		}
-		if len(reflected) == 0 {
-			continue
+		if len(reflected) > 0 {
+			if _, err := device.Write(reflected, tun.ReadPacketSpacing); err != nil {
+				return fmt.Errorf("write reflected packet to native TUN: %w", err)
+			}
 		}
-		if _, err := device.Write(reflected, 0); err != nil {
-			return fmt.Errorf("write reflected packet to native TUN: %w", err)
+		if readErr != nil {
+			return fmt.Errorf("read native TUN: %w", readErr)
 		}
 	}
 }

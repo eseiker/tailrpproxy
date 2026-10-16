@@ -261,7 +261,12 @@ selected stable Tailscale module.
 GitHub Actions uploads Linux amd64 and arm64 binaries as workflow artifacts.
 Pushing a tag such as `v1.102.3-rpp.1` also publishes both binaries and
 `SHA256SUMS` in a normal GitHub Release. CI rejects a release tag that does not
-match the version derived from `go.mod` and `RPP_REVISION`. Pushes to `main`
+match the version derived from `go.mod` and `RPP_REVISION`. To cut a release
+without pushing a tag locally, run the **Tag release** workflow from `main`
+(Actions → Tag release → Run workflow). It derives the tag from `go.mod` and
+`RPP_REVISION`, refuses existing tags and invalid revision sequences, pushes
+the annotated tag, and dispatches release CI. Enable `dry_run` to validate only.
+Pushes to `main`
 and version tags publish a multi-platform image to
 `ghcr.io/eseiker/tailrpproxy`.
 

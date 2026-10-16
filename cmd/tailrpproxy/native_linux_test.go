@@ -82,13 +82,17 @@ func TestServePacketReflector(t *testing.T) {
 						if batchSize == 3 {
 							wantCount--
 						}
-						if len(buffers) != wantCount || offset != 0 {
+						if len(buffers) != wantCount || offset != tun.ReadPacketSpacing {
 							t.Fatalf("write count=%d offset=%d", len(buffers), offset)
 						}
 						for _, buffer := range buffers {
-							if !bytes.Equal(buffer, expected) {
-								t.Fatalf("reflected packet = %x, want %x", buffer, expected)
+							if cap(buffer) != len(buffer) {
+								t.Fatal("write buffer capacity overlaps subsequent packets")
 							}
+							if !bytes.Equal(buffer[offset:], expected) {
+								t.Fatalf("reflected packet = %x, want %x", buffer[offset:], expected)
+							}
+							clear(buffer[:offset])
 						}
 						return len(buffers), nil
 					},

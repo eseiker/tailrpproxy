@@ -224,16 +224,17 @@ func servePacketReflector(device tun.Device, reflector *rpproxy.PacketReflector)
 		count, readErr := device.Read(slab, packets)
 		reflected = reflected[:0]
 		for _, packet := range packets[:count] {
-			if packet.Offset < 0 || packet.Offset > len(slab) || packet.Size <= 0 || packet.Size > len(slab)-packet.Offset {
+			if packet.Offset < tun.ReadPacketSpacing || packet.Offset > len(slab) || packet.Size <= 0 || packet.Size > len(slab)-packet.Offset {
 				continue
 			}
 			buffer := slab[packet.Offset : packet.Offset+packet.Size]
 			if reflector.Reflect(buffer) {
-				reflected = append(reflected, buffer)
+				end := packet.Offset + packet.Size
+				reflected = append(reflected, slab[packet.Offset-tun.ReadPacketSpacing:end:end])
 			}
 		}
 		if len(reflected) > 0 {
-			if _, err := device.Write(reflected, 0); err != nil {
+			if _, err := device.Write(reflected, tun.ReadPacketSpacing); err != nil {
 				return fmt.Errorf("write reflected packet to native TUN: %w", err)
 			}
 		}

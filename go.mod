@@ -1,12 +1,12 @@
 module github.com/eseiker/tailrpproxy
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/jsimonetti/rtnetlink v1.4.2
 	github.com/tailscale/wireguard-go v0.0.0-20260928213032-417aef361226
 	golang.org/x/sys v0.48.0
-	tailscale.com v1.104.1
+	tailscale.com v1.104.2
 )
 
 require (
